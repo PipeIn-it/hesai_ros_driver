@@ -276,7 +276,9 @@ inline sensor_msgs::PointCloud2 SourceDriver::ToRosMsg(const LidarDecodedFrame<L
   }
   // printf("frame:%d points:%u packet:%d start time:%lf end time:%lf\n",frame.frame_index, frame.points_num, frame.packet_num, frame.points[0].timestamp, frame.points[frame.points_num - 1].timestamp) ;
   // ros_msg.header.seq = s;
-  ros_msg.header.stamp = ros::Time().fromSec(frame.points[0].timestamp);
+  // ros_msg.header.stamp = ros::Time().fromSec(frame.points[0].timestamp);
+  ros_msg.header.stamp = ros::Time::now();
+
   ros_msg.header.frame_id = frame_id_;
   return ros_msg;
 }
@@ -290,7 +292,9 @@ inline hesai_ros_driver::UdpFrame SourceDriver::ToRosMsg(const UdpFrame_t& ros_m
     memcpy(&rawpacket.data[0], &ros_msg[i].buffer[0], ros_msg[i].packet_len);
     rs_msg.packets.push_back(rawpacket);
   }
-  rs_msg.header.stamp = ros::Time().fromSec(timestamp);
+  // rs_msg.header.stamp = ros::Time().fromSec(timestamp);
+  rs_msg.header.stamp = ros::Time::now();
+
   rs_msg.header.frame_id = frame_id_;
   return rs_msg;
 }

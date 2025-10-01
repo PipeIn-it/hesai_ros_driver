@@ -20,7 +20,7 @@ lidar:
       pitch: 0
       yaw: 3.1415926
       #decoder param
-      use_timestamp_type: 0           #0 use point cloud timestamp; 1 use receive timestamp
+      use_timestamp_type: 1           #0 use point cloud timestamp; 1 use receive timestamp
       #fov config, [fov_start, fov_end] range [1, 359], [-1, -1]means use default
       fov_start: -1
       fov_end:  -1

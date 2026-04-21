@@ -65,7 +65,9 @@ if($ENV{ROS_VERSION} MATCHES "1")
     sensor_msgs
     std_msgs
     message_generation
-    roslib)
+    roslib
+    nodelet
+    pluginlib)
 
   add_message_files(
     FILES
@@ -82,9 +84,11 @@ if($ENV{ROS_VERSION} MATCHES "1")
   )
 
 
-  catkin_package(CATKIN_DEPENDS 
-    sensor_msgs 
-    roslib)
+  catkin_package(CATKIN_DEPENDS
+    sensor_msgs
+    roslib
+    nodelet
+    pluginlib)
 
 endif($ENV{ROS_VERSION} MATCHES "1")
 
@@ -209,7 +213,8 @@ else(CUDA_FOUND)
 endif(CUDA_FOUND)
 
 
-  target_include_directories(hesai_ros_driver_node PRIVATE
+# Shared SDK include directories (used by node and component/nodelet targets)
+set(HESAI_SDK_INCLUDE_DIRS
   src/driver/HesaiLidar_SDK_2.0/
   src/driver/HesaiLidar_SDK_2.0/libhesai
   src/driver/HesaiLidar_SDK_2.0/libhesai/Lidar
@@ -234,7 +239,20 @@ endif(CUDA_FOUND)
   src/msg/rs_msg
   src/utility
   ${CMAKE_CURRENT_BINARY_DIR}
-)  
+)
+
+# Shared SDK link libraries
+set(HESAI_SDK_LINK_LIBS
+  ${YAML_CPP_LIBRARIES}
+  ${Boost_LIBRARIES}
+  source_lib
+  container_lib
+  ptcClient_lib
+  ptcParser_lib
+  log_lib
+)
+
+  target_include_directories(hesai_ros_driver_node PRIVATE ${HESAI_SDK_INCLUDE_DIRS})  
 
 #Ros#
 if($ENV{ROS_VERSION} MATCHES "1")
@@ -243,6 +261,30 @@ if($ENV{ROS_VERSION} MATCHES "1")
           RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
           LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
           ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION})
+
+  # Hesai Driver Nodelet (for composed pipelines)
+  add_library(hesai_driver_nodelet SHARED
+    src/manager/hesai_driver_nodelet.cpp
+  )
+  target_include_directories(hesai_driver_nodelet PRIVATE ${HESAI_SDK_INCLUDE_DIRS})
+  target_link_libraries(hesai_driver_nodelet
+    ${HESAI_SDK_LINK_LIBS}
+    ${ROS_LIBS}
+    ${catkin_LIBRARIES}
+  )
+  if(CUDA_FOUND)
+    target_link_libraries(hesai_driver_nodelet ${CUDA_LIBS})
+  endif()
+  add_dependencies(hesai_driver_nodelet
+    ${${PROJECT_NAME}_EXPORTED_TARGETS}
+    ${catkin_EXPORTED_TARGETS}
+  )
+  install(TARGETS hesai_driver_nodelet
+    LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  )
+  install(FILES nodelet_plugins.xml
+    DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+  )
 endif($ENV{ROS_VERSION} MATCHES "1")
 
 
@@ -250,26 +292,52 @@ endif($ENV{ROS_VERSION} MATCHES "1")
 
 if($ENV{ROS_VERSION} MATCHES "2")
   find_package(ament_index_cpp REQUIRED)
-  ament_target_dependencies(hesai_ros_driver_node 
+  find_package(rclcpp_components REQUIRED)
+
+  ament_target_dependencies(hesai_ros_driver_node
   "ament_index_cpp"
   "rcl_interfaces"
-  "rclcpp" 
+  "rclcpp"
   "rcutils"
-  "std_msgs" 
-  "sensor_msgs" 
+  "std_msgs"
+  "sensor_msgs"
   # "tf2_geometry_msgs"
   )
   rosidl_target_interfaces(hesai_ros_driver_node  ${PROJECT_NAME} "rosidl_typesupport_cpp")
+
+  # Hesai Driver Component (for composed pipelines with zero-copy IPC)
+  add_library(hesai_driver_component SHARED
+    src/manager/hesai_driver_component.cpp
+  )
+  target_include_directories(hesai_driver_component PRIVATE ${HESAI_SDK_INCLUDE_DIRS})
+  target_link_libraries(hesai_driver_component ${HESAI_SDK_LINK_LIBS})
+  if(CUDA_FOUND)
+    target_link_libraries(hesai_driver_component ${CUDA_LIBS})
+  endif()
+  ament_target_dependencies(hesai_driver_component
+    rclcpp rclcpp_components sensor_msgs std_msgs ament_index_cpp
+  )
+  rosidl_target_interfaces(hesai_driver_component ${PROJECT_NAME} "rosidl_typesupport_cpp")
+  rclcpp_components_register_nodes(hesai_driver_component
+    "hesai_ros_driver::HesaiDriverComponent"
+  )
 
   install(TARGETS
     hesai_ros_driver_node
     DESTINATION lib/${PROJECT_NAME})
 
+  install(TARGETS
+    hesai_driver_component
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION lib/${PROJECT_NAME})
+
   install(DIRECTORY
     launch
     rviz
+    config
     DESTINATION share/${PROJECT_NAME})
-    
+
 
   ament_package()
 

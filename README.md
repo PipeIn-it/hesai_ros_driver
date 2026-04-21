@@ -1,5 +1,5 @@
 # Introduction to HesaiLidar_ROS_2.0
-This repository includes the ROS Driver for Hesai LiDAR sensor manufactured by Hesai Technology. 
+This repository includes the ROS Driver for Hesai LiDAR sensor manufactured by Hesai Technology.
 Developed based on [HesaiLidar_SDK_2.0](https://github.com/HesaiTechnology/HesaiLidar_SDK_2.0), After launched, the project will monitor UDP packets from Lidar,parse data and publish point cloud frames into ROS topic
 
 ## Support Lidar type
@@ -12,7 +12,7 @@ Developed based on [HesaiLidar_SDK_2.0](https://github.com/HesaiTechnology/Hesai
 ### Installation dependencies
 
 Install ROS related dependency libraries, please refer to: http://wiki.ros.org
-    
+
 - Ubuntu 16.04 - ROS Kinetic desktop
 - Ubuntu 18.04 - ROS Melodic desktop
 - Ubuntu 20.04 - ROS Noetic desktop
@@ -33,14 +33,14 @@ Install ROS related dependency libraries, please refer to: http://wiki.ros.org
 ### Clone
 ```
 $ git clone --recurse-submodules https://github.com/HesaiTechnology/HesaiLidar_ROS_2.0.git
-```    
+```
 
 ### Compile and run
 
 - ros1
 
     Create an `src` folder, copy the source code of the ros driver into it, and then run the following command:
-        
+
         catkin_make
         source devel/setup.bash
         roslaunch hesai_ros_driver start.launch
@@ -48,20 +48,20 @@ $ git clone --recurse-submodules https://github.com/HesaiTechnology/HesaiLidar_R
 - ros2
 
     Create an `src` folder, copy the source code of the ros driver into it, and then run the following command:
-        
+
         colcon build --symlink-install
         . install/local_setup.bash
 
-    For ROS2-Dashing     
+    For ROS2-Dashing
 
         ros2 launch hesai_ros_driver dashing_start.py
-        
+
     For other ROS2 version
 
         ros2 launch hesai_ros_driver start.py
 
 ### Introduction to the configuration file `config.yaml` parameters
-    
+
     lidar:
     - driver:
         udp_port: 2368                                       #UDP port of lidar
@@ -78,13 +78,47 @@ $ git clone --recurse-submodules https://github.com/HesaiTechnology/HesaiLidar_R
         roll: 0                                              #Calibration parameter
         pitch: 0                                             #Calibration parameter
         yaw: 0                                               #Calibration parameter
-    ros:
+      ros:
         ros_frame_id: hesai_lidar                            #Frame id of packet message and point cloud message
         ros_recv_packet_topic: /lidar_packets                #Topic used to receive lidar packets from ROS
         ros_send_packet_topic: /lidar_packets                #Topic used to send lidar packets through ROS
         ros_send_point_cloud_topic: /lidar_points            #Topic used to send point cloud through ROS
-        send_packet_ros: true                                #true: Send packets through ROS 
-        send_point_cloud_ros: true                           #true: Send point cloud through ROS 
+        send_packet_ros: true                                #true: Send packets through ROS
+        send_point_cloud_ros: true                           #true: Send point cloud through ROS
+
+#### File path resolution
+
+The `correction_file_path`, `firetimes_path`, and `pcap_path` parameters support both absolute and relative paths.
+
+- **Absolute paths** (starting with `/`) are used as-is.
+- **Relative paths** are resolved against the package root directory (`hesai_ros_driver/`).
+
+Example using relative paths:
+
+    correction_file_path: "src/driver/HesaiLidar_SDK_2.0/correction/angle_correction/XT32_Angle_Correction_File.csv"
+    firetimes_path: "src/driver/HesaiLidar_SDK_2.0/correction/firetime_correction/XT32_Firetime_Correction_File.csv"
+
+### Correction files
+
+The driver requires two types of correction files for accurate point cloud generation:
+
+- **Angle correction file**: Contains per-channel elevation and azimuth offsets. CSV format: `Channel,Elevation,Azimuth`.
+- **Firetime correction file**: Contains per-channel fire time offsets in microseconds. CSV format: `Channel,fire time(us)`.
+
+#### Where to place correction files
+
+The SDK includes default correction files under:
+
+    src/driver/HesaiLidar_SDK_2.0/correction/angle_correction/
+    src/driver/HesaiLidar_SDK_2.0/correction/firetime_correction/
+
+Place your sensor-specific correction files (downloaded from the manufacturer or exported from PandarView) in these directories and update `config.yaml` accordingly.
+
+#### Automatic firetime download (TCP fallback)
+
+When `source_type` is `1` (real-time lidar connection) and the firetime file is missing or fails to load, the driver will automatically attempt to download firetime corrections from the sensor via TCP (PTC command 0xA9). This means you can omit `firetimes_path` when connected to a live sensor and the driver will fetch the corrections directly.
+
+The same TCP fallback applies to angle corrections — if the file fails to load, the driver attempts to download corrections from the sensor.
 
 ### Real time playback
 
@@ -92,70 +126,98 @@ Set the `source_type` in the configuration file to `1` and input the correct lid
 
 ### Parsing PCAP file
 
-Set the `source_type` in the configuration file to `2` and input the correct lidar `pcap_path` , `correction_file_path` and `firetime_file_path`, then run start.launch.
+Set the `source_type` in the configuration file to `2` and input the correct lidar `pcap_path` , `correction_file_path` and `firetimes_path`, then run start.launch.
 
 ### Record and playback ROSBAG file
 
-- Record ：
+- Record :
 
     When playing or parsing PCAP in real-time, set `send_packet_ros` to `true`, start another terminal and enter the following command to record the data packet ROSBAG.
-        
+
         rosbag record ros_send_packet_topic
 
-- Playback ：
+- Playback :
 
     First, replay the recorded rosbag file `test.bag` using the following command.
-        
+
         rosbag play test.bag
 
-    Set the `source_type` in the configuration file to `3` and input the correct lidar `correction_file_path` , `firetime_file_path` and `ros_recv_packet_topic`(the topic name of rosbag), then run start.launch.
+    Set the `source_type` in the configuration file to `3` and input the correct lidar `correction_file_path` , `firetimes_path` and `ros_recv_packet_topic`(the topic name of rosbag), then run start.launch.
 
 ### Realize multi lidar fusion
 
 According to the configuration of a single lidar, multiple drivers can be created in `config.yaml`, as shown in the following example
 
     lidar:
-    - driver:              
-        udp_port: 2368                  
-        ptc_port: 9347              
-        device_ip_address: 192.168.1.201          
-        pcap_path: "<The PCAP file path>"                  
-        correction_file_path: "<The correction file path>" 
-        firetimes_path: "<Your firetime file path>"       
-        source_type: 2          
-        pcap_play_synchronization: true                   
-        x: 0                                      
-        y: 0                                     
-        z: 0                                
-        roll: 0                                 
-        pitch: 0                             
-        yaw: 0                                   
-    ros:
-        ros_frame_id: hesai_lidar                  
-        ros_recv_packet_topic: /lidar_packets      
-        ros_send_packet_topic: /lidar_packets      
-        ros_send_point_cloud_topic: /lidar_points  
-        send_packet_ros: true                     
-        send_point_cloud_ros: true             
-    - driver:               
-        udp_port: 2368                         
-        ptc_port: 9347                           
-        device_ip_address: 192.168.1.201                  
-        pcap_path: "<The PCAP file path>"                   
-        correction_file_path: "<The correction file path>"  
-        firetimes_path: "<Your firetime file path>"        
-        source_type: 2        
-        pcap_play_synchronization: true                     
-        x: 0                                       
-        y: 0                                       
-        z: 0                                       
-        roll: 0                                    
-        pitch: 0                                   
-        yaw: 0                                     
-    ros:
-        ros_frame_id: hesai_lidar                  
-        ros_recv_packet_topic: /lidar_packets2     
-        ros_send_packet_topic: /lidar_packets2     
-        ros_send_point_cloud_topic: /lidar_points2 
-        send_packet_ros: false                     
-        send_point_cloud_ros: true                    
+    - driver:
+        udp_port: 2368
+        ptc_port: 9347
+        device_ip_address: 192.168.1.201
+        pcap_path: "<The PCAP file path>"
+        correction_file_path: "<The correction file path>"
+        firetimes_path: "<Your firetime file path>"
+        source_type: 2
+        pcap_play_synchronization: true
+        x: 0
+        y: 0
+        z: 0
+        roll: 0
+        pitch: 0
+        yaw: 0
+      ros:
+        ros_frame_id: hesai_lidar
+        ros_recv_packet_topic: /lidar_packets
+        ros_send_packet_topic: /lidar_packets
+        ros_send_point_cloud_topic: /lidar_points
+        send_packet_ros: true
+        send_point_cloud_ros: true
+    - driver:
+        udp_port: 2368
+        ptc_port: 9347
+        device_ip_address: 192.168.1.201
+        pcap_path: "<The PCAP file path>"
+        correction_file_path: "<The correction file path>"
+        firetimes_path: "<Your firetime file path>"
+        source_type: 2
+        pcap_play_synchronization: true
+        x: 0
+        y: 0
+        z: 0
+        roll: 0
+        pitch: 0
+        yaw: 0
+      ros:
+        ros_frame_id: hesai_lidar
+        ros_recv_packet_topic: /lidar_packets2
+        ros_send_packet_topic: /lidar_packets2
+        ros_send_point_cloud_topic: /lidar_points2
+        send_packet_ros: false
+        send_point_cloud_ros: true
+
+## SDK bug fixes and improvements
+
+The following fixes were applied to the HesaiLidar_SDK_2.0 code in this fork:
+
+### GPU parser fixes
+
+1. **XT/XTM mirror correction (udp6_1)**: The GPU kernel had the mirror correction formula computed but immediately overwritten by simple spherical coordinates. Implemented the correct mirror correction matching the CPU parser's `GetDistanceCorrection()`, accounting for the rotating mirror's physical offsets (`b_` and `h_`).
+
+2. **Unreachable cleanup in `LoadCorrectionString` (6 parsers)**: A `return 0` statement was placed before `cudaFree` cleanup calls, making correction re-loading impossible and leaking GPU memory. Moved the return after cleanup.
+
+3. **FT120 out-of-bounds threads (udp7_2)**: The GPU kernel launched 512 threads per block but FT120 only has 120 points per packet. Added bounds check to prevent 392 threads from writing garbage values.
+
+4. **Missing `lasernum == 0` guard (all GPU parsers)**: Added guard in `ComputeXYZI` to prevent undefined behavior from integer division by zero in the kernel when `laser_num` or `block_num` is 0.
+
+### Firetime correction fixes
+
+5. **`LoadFiretimesString` was a no-op (CPU and GPU parsers)**: Both parsers had stub implementations that silently discarded firetime data downloaded from the sensor via TCP. Implemented full CSV parsing in both parsers.
+
+6. **No TCP fallback for firetimes in `lidar.cc`**: When the firetime file failed to load, no attempt was made to download from the sensor. Added `LoadFiretimesForUdpParser()` with TCP fallback via PTC command 0xA9.
+
+7. **Off-by-one index in CPU `LoadFiretimesFile`**: The firetime CSV uses 1-indexed laser IDs but the CPU parser stored values at `[idx]` instead of `[idx - 1]`, causing every laser's timestamp to be shifted by one channel. Fixed to match the GPU parser's correct 0-based indexing.
+
+8. **GPU SDK never loaded firetimes**: `HesaiLidarSdkGpu::Init()` loaded angle corrections on the GPU parser but never called `LoadFiretimesFile`. Added firetime file loading and TCP fallback to the GPU SDK path.
+
+### Path handling
+
+9. **Relative path support**: `correction_file_path`, `firetimes_path`, and `pcap_path` now support relative paths resolved against the package root directory.

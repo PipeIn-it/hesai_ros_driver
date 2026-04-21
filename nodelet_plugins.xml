@@ -1,0 +1,7 @@
+<library path="lib/libhesai_driver_nodelet">
+  <class name="hesai_ros_driver/HesaiDriverNodelet"
+         type="hesai_ros_driver::HesaiDriverNodelet"
+         base_class_type="nodelet::Nodelet">
+    <description>Hesai LiDAR driver nodelet for composed pipelines.</description>
+  </class>
+</library>

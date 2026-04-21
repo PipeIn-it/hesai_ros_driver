@@ -5,11 +5,26 @@
 #else
   #include "hesai_lidar_sdk.hpp"
 #endif
+#ifdef ROS_FOUND
+  #include <ros/package.h>
+#endif
 class DriveYamlParam
 {
 public:
     DriveYamlParam() {};
     ~DriveYamlParam() {};
+
+    // Resolve a path relative to the package root if it is not absolute
+    static std::string ResolvePath(const std::string &path) {
+        if (path.empty() || path[0] == '/') return path;
+        std::string pkg_root;
+#ifdef RUN_IN_ROS_WORKSPACE
+        pkg_root = ros::package::getPath("hesai_ros_driver");
+#else
+        pkg_root = (std::string)PROJECT_PATH;
+#endif
+        return pkg_root + "/" + path;
+    }
 
     bool GetDriveYamlParam(const YAML::Node& config, DriverParam &driver_param)
     {
@@ -24,6 +39,10 @@ public:
         YamlRead<std::string>(driver_config, "pcap_path",               driver_param.input_param.pcap_path, "");
         YamlRead<std::string>(driver_config, "firetimes_path",          driver_param.input_param.firetimes_path, "");
         YamlRead<std::string>(driver_config, "correction_file_path",    driver_param.input_param.correction_file_path, "");
+        // Resolve relative paths against the package root
+        driver_param.input_param.firetimes_path = ResolvePath(driver_param.input_param.firetimes_path);
+        driver_param.input_param.correction_file_path = ResolvePath(driver_param.input_param.correction_file_path);
+        driver_param.input_param.pcap_path = ResolvePath(driver_param.input_param.pcap_path);
         YamlRead<int>(        driver_config, "standby_mode",            driver_param.input_param.standby_mode, -1);
         YamlRead<int>(        driver_config, "speed",                   driver_param.input_param.speed, -1);
         // decoder related
@@ -37,6 +56,12 @@ public:
         YamlRead<std::string>(driver_config, "device_ip_address",         driver_param.input_param.device_ip_address, "192.168.1.201");
         YamlRead<float>(      driver_config, "frame_start_azimuth",       driver_param.decoder_param.frame_start_azimuth, -1);
         YamlRead<uint16_t>(   driver_config, "use_timestamp_type",        driver_param.decoder_param.use_timestamp_type, 0);
+        if (driver_param.decoder_param.use_timestamp_type > 1) {
+            std::cerr << "Invalid use_timestamp_type="
+                      << driver_param.decoder_param.use_timestamp_type
+                      << ", defaulting to 0 (sensor time)" << std::endl;
+            driver_param.decoder_param.use_timestamp_type = 0;
+        }
         YamlRead<int>(        driver_config, "fov_start",                 driver_param.decoder_param.fov_start, -1);
         YamlRead<int>(        driver_config, "fov_end",                   driver_param.decoder_param.fov_end, -1);
         YamlRead<int>(        driver_config, "source_type",               source_type, 0);

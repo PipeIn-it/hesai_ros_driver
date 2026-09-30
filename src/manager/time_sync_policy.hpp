@@ -5,8 +5,10 @@
  * When the lidar is PTP-locked its packet time is PTP time, which is TAI on a
  * linuxptp grandmaster (37 s ahead of UTC today). A frame is then stamped with
  * its own start time minus that whole-second offset: SENSOR mode. On any doubt
- * the frame keeps the arrival-based stamp, sensor time aligned to host time by
- * a smoothed offset: HOST mode, the behaviour this driver always had.
+ * the frame start is taken from the host clock instead, sensor time aligned to
+ * it by a smoothed arrival offset: HOST mode. Both modes stamp the frame START,
+ * so per-point offsets from header.stamp hold in either, and a switch moves the
+ * stamp by the arrival latency only.
  *
  * ROS-free and header-only, so the ROS1 and ROS2 wrappers share it and it can
  * be unit-tested (test/test_time_sync_policy.cpp). Thread-safe: the SDK's
@@ -38,10 +40,10 @@ enum class HostReason {
   kNone,
   kForcedHost,         // timestamp_source: host
   kNoPtpStatus,        // no PTP status read from the lidar yet
-  kPtcUnreachable,     // the last PTC query failed
+  kPtcUnreachable,     // the last ptc_fail_limit PTC queries failed
   kPtpStatusStale,     // no successful PTC query for ptp_status_max_age_s
   kPtpNotSlave,        // PTP port state is not SLAVE
-  kPtpNotLocked,       // lidar clock status is not Locked
+  kPtpNotLocked,       // lidar clock status is Free Run or Frozen
   kPtpOffsetTooLarge,  // |master offset| above ptp_max_offset_ns
   kSensorTimeInvalid,  // sensor clock outside 2000..2100 (free-running lidar)
   kImplausibleFrame,   // frame spans more time than one revolution allows
@@ -58,7 +60,7 @@ inline const char* HostReasonName(HostReason r) {
     case HostReason::kPtcUnreachable: return "PTC unreachable";
     case HostReason::kPtpStatusStale: return "PTP status stale";
     case HostReason::kPtpNotSlave: return "PTP port not SLAVE";
-    case HostReason::kPtpNotLocked: return "lidar PTP clock not Locked";
+    case HostReason::kPtpNotLocked: return "lidar PTP clock free running or frozen";
     case HostReason::kPtpOffsetTooLarge: return "PTP master offset too large";
     case HostReason::kSensorTimeInvalid: return "sensor clock not set";
     case HostReason::kImplausibleFrame: return "frame time span implausible";
@@ -76,6 +78,7 @@ inline const char* StampModeName(StampMode m) {
 // PTC 0x06 query type 1 reports the linuxptp port state; 9 is SLAVE.
 constexpr int32_t kPtpPortStateSlave = 9;
 // PTC 0x09 PTP clock status: 0 Free Run, 1 Tracking, 2 Locked, 3 Frozen.
+constexpr int kPtpClockTracking = 1;
 constexpr int kPtpClockLocked = 2;
 
 inline const char* PtpClockStatusName(int s) {
@@ -101,6 +104,7 @@ struct TimeSyncConfig {
   double latency_warn_s = 0.020;     // diagnostics WARN threshold
   double host_alpha = 0.05;          // arrival-offset EMA gain
   double host_snap_s = 0.5;          // re-seed the EMA when the offset jumps
+  int ptc_fail_limit = 3;            // failed PTC polls in a row before arrival time
 };
 
 // Latest PTP state read from the lidar over PTC.
@@ -182,12 +186,16 @@ class TimeSyncPolicy {
     status_.reachable = true;
     have_status_ = true;
     status_mono_s_ = mono_now_s;
+    ptc_failures_ = 0;
   }
 
-  // A failed PTC query. The previous values stay visible in diagnostics.
+  // A failed PTC query. The previous values stay visible in diagnostics. One
+  // lost reply is not a lost lidar: the last good status stands until
+  // ptc_fail_limit queries in a row fail (and ptp_status_max_age_s bounds it).
   void MarkPtcUnreachable() {
     std::lock_guard<std::mutex> lock(mutex_);
-    status_.reachable = false;
+    ++ptc_failures_;
+    if (ptc_failures_ >= cfg_.ptc_fail_limit) status_.reachable = false;
     have_status_ = true;
   }
 
@@ -207,8 +215,12 @@ class TimeSyncPolicy {
     r.point_times_valid = span_ok;
     if (!span_ok) ++implausible_frames_;
 
-    // Kept up to date in every mode, so a fall-back to HOST never jumps.
-    if (time_valid) UpdateHostOffset(f.sensor_start_s - host_now_s);
+    // Kept up to date in every mode, so a fall-back to HOST moves the stamp by
+    // the arrival latency only. Taken at the frame END: that point is the one
+    // that just arrived. (From the start, the offset also held the frame span,
+    // and every host stamp landed a revolution late while point offsets still
+    // count from the start.)
+    if (time_valid) UpdateHostOffset(f.sensor_end_s - host_now_s);
 
     int k = 0;
     const HostReason reason = SensorBlocker(f, host_now_s, mono_now_s, time_valid, plausible, &k);
@@ -219,7 +231,17 @@ class TimeSyncPolicy {
       ++sensor_frames_;
     } else {
       r.mode = StampMode::kHost;
-      r.stamp_s = (time_valid && host_offset_init_) ? f.sensor_start_s - host_offset_s_ : host_now_s;
+      if (!span_ok) {
+        // The clock stepped inside the frame: no start to recover. Arrival
+        // time, and the point times are zeroed.
+        r.stamp_s = host_now_s;
+      } else if (time_valid && host_offset_init_) {
+        r.stamp_s = f.sensor_start_s - host_offset_s_;
+      } else {
+        // Sensor clock not set (free-running lidar), but its offsets inside the
+        // frame hold: the start is the arrival minus the frame's own span.
+        r.stamp_s = host_now_s - span;
+      }
       ++host_frames_;
     }
     r.reason = reason;
@@ -332,7 +354,13 @@ class TimeSyncPolicy {
     if (!status_.reachable) return HostReason::kPtcUnreachable;
     if (mono_now_s - status_mono_s_ > cfg_.ptp_status_max_age_s) return HostReason::kPtpStatusStale;
     if (status_.port_state != kPtpPortStateSlave) return HostReason::kPtpNotSlave;
-    if (status_.clock_status >= 0 && status_.clock_status != kPtpClockLocked) return HostReason::kPtpNotLocked;
+    // Tracking passes: the lidar's own "Locked" means within its lock threshold
+    // (1 us on orca-01's XT32), so every grandmaster wobble reads as Tracking.
+    // The master-offset limit below is what decides.
+    if (status_.clock_status >= 0 && status_.clock_status != kPtpClockLocked &&
+        status_.clock_status != kPtpClockTracking) {
+      return HostReason::kPtpNotLocked;
+    }
     if (std::llabs(status_.master_offset_ns) > cfg_.ptp_max_offset_ns) return HostReason::kPtpOffsetTooLarge;
     return HostReason::kNone;
   }
@@ -406,6 +434,7 @@ class TimeSyncPolicy {
   PtpStatus status_;
   bool have_status_ = false;
   double status_mono_s_ = -1.0;
+  int ptc_failures_ = 0;
 
   double host_offset_s_ = 0.0;
   bool host_offset_init_ = false;

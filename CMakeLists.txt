@@ -46,6 +46,15 @@ endif()
 
 add_compile_options(-Wall)
 
+# test_xt_block_timing drives the SDK's header-only Udp6_1 parser directly.
+set(HESAI_XT_TEST_INCLUDES
+  src/driver/HesaiLidar_SDK_2.0/libhesai
+  src/driver/HesaiLidar_SDK_2.0/libhesai/include
+  src/driver/HesaiLidar_SDK_2.0/libhesai/Lidar
+  src/driver/HesaiLidar_SDK_2.0/libhesai/UdpParser/include
+  src/driver/HesaiLidar_SDK_2.0/libhesai/UdpParser/src
+  src/driver/HesaiLidar_SDK_2.0/libhesai/UdpProtocol)
+
 #========================
 # Dependencies Setup
 #========================
@@ -98,6 +107,9 @@ if($ENV{ROS_VERSION} MATCHES "1")
     target_include_directories(test_time_sync_policy PRIVATE src/manager)
     # The test has no main(); ament_add_gtest links gtest_main by default.
     target_link_libraries(test_time_sync_policy gtest_main)
+    catkin_add_gtest(test_xt_block_timing test/test_xt_block_timing.cpp)
+    target_include_directories(test_xt_block_timing PRIVATE ${HESAI_XT_TEST_INCLUDES})
+    target_link_libraries(test_xt_block_timing gtest_main platutils_lib)
   endif()
 
 endif($ENV{ROS_VERSION} MATCHES "1")
@@ -354,6 +366,9 @@ if($ENV{ROS_VERSION} MATCHES "2")
     find_package(ament_cmake_gtest REQUIRED)
     ament_add_gtest(test_time_sync_policy test/test_time_sync_policy.cpp)
     target_include_directories(test_time_sync_policy PRIVATE src/manager)
+    ament_add_gtest(test_xt_block_timing test/test_xt_block_timing.cpp)
+    target_include_directories(test_xt_block_timing PRIVATE ${HESAI_XT_TEST_INCLUDES})
+    target_link_libraries(test_xt_block_timing platutils_lib)
   endif()
 
   ament_package()

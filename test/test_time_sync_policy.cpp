@@ -73,8 +73,30 @@ TEST(TimeSyncPolicy, HostModeBeforeAnyPtpStatus) {
   EXPECT_EQ(r.reason, HostReason::kNoPtpStatus);
   EXPECT_TRUE(r.point_times_valid);
   EXPECT_TRUE(r.mode_changed);  // the first frame always reports its mode
-  // Arrival alignment: the first frame is stamped with the host time.
-  EXPECT_NEAR(r.stamp_s, d.last_start_utc() + kSpan + kLatency, 1e-6);
+  // The frame start on the host clock: late by the arrival latency only, not
+  // by the frame span, since the point offsets count from the start.
+  EXPECT_NEAR(r.stamp_s, d.last_start_utc() + kLatency, 1e-6);
+}
+
+TEST(TimeSyncPolicy, SwitchingModesMovesTheStampByTheLatencyOnly) {
+  TimeSyncPolicy p{TimeSyncConfig()};
+  Driver d(&p);
+  p.UpdatePtpStatus(Locked(), d.Mono());
+  StampResult r;
+  for (int i = 0; i < 5; ++i) r = d.Next();
+  ASSERT_EQ(r.mode, StampMode::kSensor);
+  EXPECT_NEAR(r.stamp_s, d.last_start_utc(), 1e-6);
+  p.UpdatePtpStatus(Locked(200000), d.Mono());  // offset too large: host time
+  r = d.Next();
+  ASSERT_EQ(r.mode, StampMode::kHost);
+  EXPECT_NEAR(r.stamp_s, d.last_start_utc() + kLatency, 1e-6);
+  p.UpdatePtpStatus(Locked(), d.Mono());
+  for (int i = 0; i < 5; ++i) r = d.Next();
+  ASSERT_EQ(r.mode, StampMode::kSensor);
+  EXPECT_NEAR(r.stamp_s, d.last_start_utc(), 1e-6);
+  const auto s = p.Snapshot(d.Mono());
+  EXPECT_EQ(s.transitions, 3u);
+  EXPECT_EQ(s.non_monotonic, 0u);
 }
 
 TEST(TimeSyncPolicy, SwitchesToSensorAfterFiveConsistentFrames) {
@@ -118,11 +140,17 @@ TEST(TimeSyncPolicy, FallsBackAtOnceOnPtpProblems) {
   };
   PtpStatus not_slave = Locked();
   not_slave.port_state = 8;
-  PtpStatus tracking = Locked();
-  tracking.clock_status = 1;
+  PtpStatus free_run = Locked();
+  free_run.clock_status = 0;
+  PtpStatus frozen = Locked();
+  frozen.clock_status = 3;
+  PtpStatus tracking_far = Locked(200000);
+  tracking_far.clock_status = 1;
   const std::vector<Case> cases = {
       {not_slave, HostReason::kPtpNotSlave},
-      {tracking, HostReason::kPtpNotLocked},
+      {free_run, HostReason::kPtpNotLocked},
+      {frozen, HostReason::kPtpNotLocked},
+      {tracking_far, HostReason::kPtpOffsetTooLarge},
       {Locked(200000), HostReason::kPtpOffsetTooLarge},
       {Locked(-200000), HostReason::kPtpOffsetTooLarge},
   };
@@ -143,6 +171,22 @@ TEST(TimeSyncPolicy, FallsBackAtOnceOnPtpProblems) {
   }
 }
 
+TEST(TimeSyncPolicy, TrackingWithinTheOffsetLimitKeepsPtpTime) {
+  // The XT32 reads Tracking whenever it is more than its 1 us lock threshold
+  // off -- every grandmaster wobble. The master offset is what decides.
+  TimeSyncPolicy p{TimeSyncConfig()};
+  Driver d(&p);
+  p.UpdatePtpStatus(Locked(), d.Mono());
+  for (int i = 0; i < 5; ++i) d.Next();
+  PtpStatus tracking = Locked(60000);  // 60 us, as measured at 12:20Z
+  tracking.clock_status = 1;
+  p.UpdatePtpStatus(tracking, d.Mono());
+  const StampResult r = d.Next();
+  EXPECT_EQ(r.mode, StampMode::kSensor);
+  EXPECT_FALSE(r.mode_changed);
+  EXPECT_NEAR(r.stamp_s, d.last_start_utc(), 1e-6);
+}
+
 TEST(TimeSyncPolicy, UnknownClockStatusDoesNotBlock) {
   TimeSyncPolicy p{TimeSyncConfig()};
   Driver d(&p);
@@ -159,8 +203,25 @@ TEST(TimeSyncPolicy, UnreachableAndStaleStatus) {
   Driver d(&p);
   p.UpdatePtpStatus(Locked(), d.Mono());
   for (int i = 0; i < 5; ++i) d.Next();
+  // One or two lost replies keep the last good status.
   p.MarkPtcUnreachable();
+  EXPECT_EQ(d.Next().mode, StampMode::kSensor);
+  p.MarkPtcUnreachable();
+  EXPECT_EQ(d.Next().mode, StampMode::kSensor);
+  p.MarkPtcUnreachable();  // the third in a row
   EXPECT_EQ(d.Next().reason, HostReason::kPtcUnreachable);
+  // A good reply resets the count: two more failures are tolerated again.
+  p.UpdatePtpStatus(Locked(), d.Mono());
+  for (int i = 0; i < 5; ++i) d.Next();
+  p.MarkPtcUnreachable();
+  p.MarkPtcUnreachable();
+  EXPECT_EQ(d.Next().mode, StampMode::kSensor);
+
+  // Never a good reply: the first failure already means no PTP status.
+  TimeSyncPolicy n{TimeSyncConfig()};
+  Driver dn(&n);
+  n.MarkPtcUnreachable();
+  EXPECT_EQ(dn.Next().reason, HostReason::kPtcUnreachable);
 
   TimeSyncPolicy q{TimeSyncConfig()};
   Driver e(&q);
@@ -179,6 +240,8 @@ TEST(TimeSyncPolicy, ImplausibleFrameIsHostWithoutPointTimes) {
   EXPECT_EQ(stepped.mode, StampMode::kHost);
   EXPECT_EQ(stepped.reason, HostReason::kImplausibleFrame);
   EXPECT_FALSE(stepped.point_times_valid);
+  // No start to recover: the arrival time itself.
+  EXPECT_NEAR(stepped.stamp_s, d.last_start_utc() + 4.3 + kLatency, 1e-6);
   // 1200 rpm allows 75 ms, so the 600 rpm span is implausible there.
   EXPECT_FALSE(d.Next(kSpan, 1200).point_times_valid);
   // Unknown spin rate falls back to frame_span_max_s (0.15 s).
@@ -282,7 +345,8 @@ TEST(TimeSyncPolicy, FreeRunningClockUsesHostTimeButKeepsPointOffsets) {
   const StampResult r = p.StampFrame(f, kHost0, 100.0);
   EXPECT_EQ(r.mode, StampMode::kHost);
   EXPECT_EQ(r.reason, HostReason::kSensorTimeInvalid);
-  EXPECT_DOUBLE_EQ(r.stamp_s, kHost0);
+  // Arrival minus the frame's own span: the frame start, like every host stamp.
+  EXPECT_NEAR(r.stamp_s, kHost0 - kSpan, 1e-6);
   EXPECT_TRUE(r.point_times_valid);
 }
 
@@ -293,8 +357,8 @@ TEST(TimeSyncPolicy, HostOffsetReseedsOnClockStep) {
   d.set_tai(41);  // sensor clock jumps 4 s, no PTP status
   const StampResult r = d.Next();
   EXPECT_EQ(r.mode, StampMode::kHost);
-  // Re-seeded: still the arrival time, not 4 s in the future.
-  EXPECT_NEAR(r.stamp_s, d.last_start_utc() + kSpan + kLatency, 1e-6);
+  // Re-seeded: still the frame start on the host clock, not 4 s in the future.
+  EXPECT_NEAR(r.stamp_s, d.last_start_utc() + kLatency, 1e-6);
 }
 
 TEST(TimeSyncPolicy, NonMonotonicStampsAreCounted) {
@@ -314,7 +378,7 @@ TEST(TimeSyncPolicy, PacketStampFollowsFrameMode) {
   d.Next();
   const double sensor = kHost0 + 37.0 + 0.05;
   // HOST: aligned by the arrival offset of the first frame.
-  EXPECT_NEAR(p.StampPacket(sensor, kHost0), sensor - 37.0 + kSpan + kLatency, 1e-6);
+  EXPECT_NEAR(p.StampPacket(sensor, kHost0), sensor - 37.0 + kLatency, 1e-6);
   p.UpdatePtpStatus(Locked(), d.Mono());
   for (int i = 0; i < 5; ++i) d.Next();
   EXPECT_NEAR(p.StampPacket(sensor, kHost0), sensor - 37.0, 1e-9);

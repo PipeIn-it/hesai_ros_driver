@@ -41,10 +41,10 @@ lidar:
       send_packet_ros: false                         #true: Send packets through ROS
       send_point_cloud_ros: true                    #true: Send point cloud through ROS
       # Frame stamps (src/manager/time_sync_policy.hpp; state on /diagnostics):
-      #   auto   - lidar PTP time while its PTP clock is Locked (port SLAVE, small
-      #            master offset, fresh status); arrival time otherwise
+      #   auto   - lidar PTP time while its PTP clock is Locked or Tracking (port
+      #            SLAVE, small master offset, fresh status); arrival time otherwise
       #   sensor - lidar time without PTP checks (replays; set tai_utc_offset_s)
-      #   host   - arrival time only (the behaviour before PTP support)
+      #   host   - arrival time only; both modes stamp the frame start
       timestamp_source: auto
       tai_utc_offset_s: auto          # whole seconds lidar time is ahead of UTC (37 for TAI); auto detects it
       ptp_max_offset_ns: 100000       # largest |PTP master offset| accepted for lidar time

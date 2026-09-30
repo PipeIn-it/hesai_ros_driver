@@ -120,6 +120,17 @@ When `source_type` is `1` (real-time lidar connection) and the firetime file is 
 
 The same TCP fallback applies to angle corrections — if the file fails to load, the driver attempts to download corrections from the sensor.
 
+### Timestamps and PTP
+
+`header.stamp` of each point cloud is chosen per frame (`src/manager/time_sync_policy.hpp`, keys under `ros:` in `config.yaml`):
+
+- **PTP time** (`timestamp_source: auto`, the default): while the lidar's PTP clock is Locked — PTP port SLAVE, `|master offset| ≤ ptp_max_offset_ns`, status read over PTC within `ptp_status_max_age_s` — the stamp is the lidar's own time of the first point of the frame, minus the whole-second offset between lidar time and UTC. A linuxptp grandmaster serves TAI, so the offset is 37 s today; `tai_utc_offset_s: auto` detects it and it must be stable for 5 frames before PTP time is used.
+- **Arrival time** otherwise, and whenever a check fails: the lidar time aligned to the host clock by a smoothed offset, as before PTP support. `timestamp_source: host` forces this; `timestamp_source: sensor` skips the PTP checks (bag or pcap replay, together with a fixed `tai_utc_offset_s`).
+
+Per-point `timestamp` (float64) and `time` (float32, `publish_time_field`) are seconds from `header.stamp`. A frame whose time span exceeds 1.5 revolutions (the lidar clock stepped inside it) is stamped with arrival time and gets zero point times. `use_timestamp_type` must stay `0`.
+
+The driver polls PTP state once per second (PTC 0x06, 0x09) and publishes it raw on `ros_send_ptp_topic` and summarised on `/diagnostics`: current mode, why arrival time is used, the TAI-UTC offset, port state, clock status, master offset and the arrival latency.
+
 ### Real time playback
 
 Set the `source_type` in the configuration file to `1` and input the correct lidar `udp_port`, `ptc_port` (default 9347, usually unchanged) and `device_ip_address`, then run start.launch.

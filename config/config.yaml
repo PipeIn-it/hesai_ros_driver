@@ -4,7 +4,7 @@ lidar:
       udp_port: 2368                   #UDP port of lidar
       ptc_port: 9347                   #PTC port of lidar
       device_ip_address: 192.168.2.1 #host_ip_address
-      group_address: 255.255.255.255
+      group_address: ""                #Multicast group to join; empty for unicast/broadcast data
       pcap_path: "Your pcap file"      #The path of pcap file
       correction_file_path: "src/driver/HesaiLidar_SDK_2.0/correction/angle_correction/XT32_Angle_Correction_File.csv"
       firetimes_path: "src/driver/HesaiLidar_SDK_2.0/correction/firetime_correction/XT32_Firetime_Correction_File.csv"
@@ -20,7 +20,7 @@ lidar:
       pitch: 0
       yaw: 3.1415926
       #decoder param
-      use_timestamp_type: 0           #0 use point cloud timestamp; 1 use receive timestamp
+      use_timestamp_type: 0           #0 use point cloud timestamp; 1 use receive timestamp. Keep 0 for PTP stamps (timestamp_source below)
       #fov config, [fov_start, fov_end] range [1, 359], [-1, -1]means use default
       fov_start: -1
       fov_end:  -1
@@ -35,7 +35,19 @@ lidar:
       # ros_send_firetime_topic: /lidar_firetime
       ros_send_packet_loss_topic: /lidar_packets_loss
       # Topic used to monitor packets loss condition through ROS
-      # ros_send_ptp_topic: /lidar_ptp
-      # Topic used to send PTP lock status, offset through ROS
-      send_packet_ros: false                         #true: Send packets through ROS 
-      send_point_cloud_ros: true                    #true: Send point cloud through ROS    
+      ros_send_ptp_topic: /xt32/ptp
+      # Topic used to send the raw PTP status (PTC 0x06 type 1) once per second;
+      # ptp_lock_offset carries the lidar's configured lock threshold in us
+      send_packet_ros: false                         #true: Send packets through ROS
+      send_point_cloud_ros: true                    #true: Send point cloud through ROS
+      # Frame stamps (src/manager/time_sync_policy.hpp; state on /diagnostics):
+      #   auto   - lidar PTP time while its PTP clock is Locked (port SLAVE, small
+      #            master offset, fresh status); arrival time otherwise
+      #   sensor - lidar time without PTP checks (replays; set tai_utc_offset_s)
+      #   host   - arrival time only (the behaviour before PTP support)
+      timestamp_source: auto
+      tai_utc_offset_s: auto          # whole seconds lidar time is ahead of UTC (37 for TAI); auto detects it
+      ptp_max_offset_ns: 100000       # largest |PTP master offset| accepted for lidar time
+      ptp_status_max_age_s: 30        # lidar time only while the last good PTC status is younger than this
+      frame_span_max_s: 0.15          # frame time span limit when the spin rate is unknown
+      publish_time_field: true        # per-point `time` (float32, s from header.stamp) next to `timestamp`

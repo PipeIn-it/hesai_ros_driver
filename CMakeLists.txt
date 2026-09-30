@@ -64,10 +64,12 @@ if($ENV{ROS_VERSION} MATCHES "1")
     roscpp
     sensor_msgs
     std_msgs
+    diagnostic_msgs
     message_generation
     roslib
     nodelet
     pluginlib)
+  include_directories(${catkin_INCLUDE_DIRS})
 
   add_message_files(
     FILES
@@ -86,9 +88,17 @@ if($ENV{ROS_VERSION} MATCHES "1")
 
   catkin_package(CATKIN_DEPENDS
     sensor_msgs
+    diagnostic_msgs
     roslib
     nodelet
     pluginlib)
+
+  if(CATKIN_ENABLE_TESTING)
+    catkin_add_gtest(test_time_sync_policy test/test_time_sync_policy.cpp)
+    target_include_directories(test_time_sync_policy PRIVATE src/manager)
+    # The test has no main(); ament_add_gtest links gtest_main by default.
+    target_link_libraries(test_time_sync_policy gtest_main)
+  endif()
 
 endif($ENV{ROS_VERSION} MATCHES "1")
 
@@ -108,7 +118,8 @@ if($ENV{ROS_VERSION} MATCHES "2")
 
     find_package(ament_cmake REQUIRED)
     find_package(sensor_msgs REQUIRED)
-    find_package(std_msgs REQUIRED)  
+    find_package(diagnostic_msgs REQUIRED)
+    find_package(std_msgs REQUIRED)
     find_package(rclcpp_action REQUIRED)
     find_package(rosidl_typesupport_c REQUIRED) 
     find_package(rosidl_default_generators REQUIRED)
@@ -301,6 +312,7 @@ if($ENV{ROS_VERSION} MATCHES "2")
   "rcutils"
   "std_msgs"
   "sensor_msgs"
+  "diagnostic_msgs"
   # "tf2_geometry_msgs"
   )
   rosidl_target_interfaces(hesai_ros_driver_node  ${PROJECT_NAME} "rosidl_typesupport_cpp")
@@ -315,7 +327,7 @@ if($ENV{ROS_VERSION} MATCHES "2")
     target_link_libraries(hesai_driver_component ${CUDA_LIBS})
   endif()
   ament_target_dependencies(hesai_driver_component
-    rclcpp rclcpp_components sensor_msgs std_msgs ament_index_cpp
+    rclcpp rclcpp_components sensor_msgs std_msgs diagnostic_msgs ament_index_cpp
   )
   rosidl_target_interfaces(hesai_driver_component ${PROJECT_NAME} "rosidl_typesupport_cpp")
   rclcpp_components_register_nodes(hesai_driver_component
@@ -338,6 +350,11 @@ if($ENV{ROS_VERSION} MATCHES "2")
     config
     DESTINATION share/${PROJECT_NAME})
 
+  if(BUILD_TESTING)
+    find_package(ament_cmake_gtest REQUIRED)
+    ament_add_gtest(test_time_sync_policy test/test_time_sync_policy.cpp)
+    target_include_directories(test_time_sync_policy PRIVATE src/manager)
+  endif()
 
   ament_package()
 

@@ -1,5 +1,7 @@
 #pragma once
+#include <stdexcept>
 #include "utility/yaml_reader.hpp"
+#include "time_sync_policy.hpp"
 #ifdef __CUDACC__
   #include "hesai_lidar_sdk_gpu.cuh"
 #else
@@ -78,9 +80,49 @@ public:
         YamlRead<std::string>(config["ros"], "ros_send_ptp_topic",         driver_param.input_param.ros_send_ptp_topic, NULL_TOPIC);
         YamlRead<std::string>(config["ros"], "ros_send_correction_topic",  driver_param.input_param.ros_send_correction_topic, NULL_TOPIC);
         YamlRead<std::string>(config["ros"], "ros_send_firetime_topic",    driver_param.input_param.ros_send_firetime_topic, NULL_TOPIC);
-        YamlRead<std::string>(config["ros"], "ros_recv_correction_topic",  driver_param.input_param.ros_recv_correction_topic, NULL_TOPIC);        
+        YamlRead<std::string>(config["ros"], "ros_recv_correction_topic",  driver_param.input_param.ros_recv_correction_topic, NULL_TOPIC);
         return true;
     }
 
-    
+    // Stamping policy (time_sync_policy.hpp). Keys live under `ros:`.
+    static void GetTimeSyncParam(const YAML::Node& config, hesai_ros_driver::TimeSyncConfig &cfg)
+    {
+        const YAML::Node ros_config = config["ros"];
+
+        std::string source;
+        YamlRead<std::string>(ros_config, "timestamp_source", source, "auto");
+        if (source == "auto") {
+            cfg.source = hesai_ros_driver::TimestampSource::kAuto;
+        } else if (source == "sensor") {
+            cfg.source = hesai_ros_driver::TimestampSource::kSensor;
+        } else if (source == "host") {
+            cfg.source = hesai_ros_driver::TimestampSource::kHost;
+        } else {
+            std::cerr << "Invalid timestamp_source=" << source << ", using auto" << std::endl;
+            cfg.source = hesai_ros_driver::TimestampSource::kAuto;
+        }
+
+        std::string tai;
+        YamlRead<std::string>(ros_config, "tai_utc_offset_s", tai, "auto");
+        cfg.tai_offset_auto = true;
+        if (tai != "auto") {
+            try {
+                size_t used = 0;
+                const int value = std::stoi(tai, &used);
+                if (used != tai.size()) throw std::invalid_argument(tai);
+                cfg.tai_offset_auto = false;
+                cfg.tai_offset_s = value;
+            } catch (const std::exception&) {
+                std::cerr << "Invalid tai_utc_offset_s=" << tai << ", using auto" << std::endl;
+            }
+        }
+
+        long long max_offset_ns = cfg.ptp_max_offset_ns;
+        YamlRead<long long>(ros_config, "ptp_max_offset_ns", max_offset_ns, max_offset_ns);
+        cfg.ptp_max_offset_ns = max_offset_ns;
+        YamlRead<double>(ros_config, "ptp_status_max_age_s", cfg.ptp_status_max_age_s, cfg.ptp_status_max_age_s);
+        YamlRead<double>(ros_config, "frame_span_max_s", cfg.frame_span_max_s, cfg.frame_span_max_s);
+        YamlRead<bool>(ros_config, "publish_time_field", cfg.publish_time_field, cfg.publish_time_field);
+    }
+
 };

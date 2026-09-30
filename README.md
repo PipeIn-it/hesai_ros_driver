@@ -196,7 +196,7 @@ According to the configuration of a single lidar, multiple drivers can be create
 
 ## SDK bug fixes and improvements
 
-The following fixes were applied to the HesaiLidar_SDK_2.0 code in this fork:
+The following fixes were applied to the HesaiLidar_SDK_2.0 code in this fork. Items 1–8 live in the PipeIn-it SDK fork ([PipeIn-it/HesaiLidar_SDK_2.0](https://github.com/PipeIn-it/HesaiLidar_SDK_2.0), branch `main`), which `src/driver/HesaiLidar_SDK_2.0` tracks as a submodule; item 9 is in this repository.
 
 ### GPU parser fixes
 

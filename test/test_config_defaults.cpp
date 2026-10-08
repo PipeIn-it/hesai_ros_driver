@@ -40,7 +40,8 @@ TEST(HesaiCharacterization, ConfigYamlDefaults) {
   EXPECT_EQ(c.driver.input_param.device_ip_address, "192.168.2.1");
   EXPECT_EQ(c.driver.input_param.source_type, DATA_FROM_LIDAR);
   EXPECT_EQ(c.driver.decoder_param.use_timestamp_type, 0);
-  EXPECT_FALSE(c.driver.decoder_param.enable_packet_loss_tool);
+  // 9B.3 (C.3): the packet-loss tool is on, so the loss topic carries real counts (H2).
+  EXPECT_TRUE(c.driver.decoder_param.enable_packet_loss_tool);
   EXPECT_TRUE(c.driver.input_param.send_point_cloud_ros);
   EXPECT_FALSE(c.driver.input_param.send_packet_ros);
   EXPECT_EQ(c.sync.source, hesai_ros_driver::TimestampSource::kAuto);

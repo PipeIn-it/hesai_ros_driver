@@ -416,8 +416,17 @@ if($ENV{ROS_VERSION} MATCHES "2")
     target_link_libraries(test_sdk_counters platutils_lib)
     ament_add_gtest(test_gpu_frame_step test/test_gpu_frame_step.cpp)
     target_include_directories(test_gpu_frame_step PRIVATE ${HESAI_SDK_INCLUDE_DIRS})
-    foreach(_ros2_test test_ros2_stamp test_ros2_pointcloud_layout)
-      ament_add_gtest(${_ros2_test} test/${_ros2_test}.cpp)
+    # The driver's own 9B call sites through InitImpl (review of 9B, finding 6; the twin of
+    # source_driver_ros1.test): one case per process, the SDK's Logger cannot stop twice.
+    ament_add_gtest(test_ros2_source_driver_without_loss_tool test/test_ros2_source_driver.cpp
+      ENV GTEST_FILTER=SourceDriverRos2.WithoutTheLossTool*)
+    ament_add_gtest(test_ros2_source_driver_with_loss_tool test/test_ros2_source_driver.cpp
+      ENV GTEST_FILTER=SourceDriverRos2.WithTheLossTool*)
+    foreach(_ros2_test test_ros2_stamp test_ros2_pointcloud_layout
+        test_ros2_source_driver_without_loss_tool test_ros2_source_driver_with_loss_tool)
+      if(NOT TARGET ${_ros2_test})
+        ament_add_gtest(${_ros2_test} test/${_ros2_test}.cpp)
+      endif()
       target_include_directories(${_ros2_test} PRIVATE ${HESAI_SDK_INCLUDE_DIRS})
       target_link_libraries(${_ros2_test} ${HESAI_SDK_LINK_LIBS})
       ament_target_dependencies(${_ros2_test} rclcpp sensor_msgs std_msgs diagnostic_msgs

@@ -332,6 +332,17 @@ if($ENV{ROS_VERSION} MATCHES "1")
     catkin_add_gtest(test_gpu_frame_step test/test_gpu_frame_step.cpp)
     target_include_directories(test_gpu_frame_step PRIVATE ${HESAI_SDK_INCLUDE_DIRS})
     target_link_libraries(test_gpu_frame_step gtest_main)
+    # The driver's own 9B call sites through InitImpl (review of 9B, finding 6): needs a master.
+    find_package(rostest REQUIRED)
+    add_rostest_gtest(test_ros1_source_driver test/source_driver_ros1.test
+      test/test_ros1_source_driver.cpp)
+    if(TARGET test_ros1_source_driver)
+      target_include_directories(test_ros1_source_driver PRIVATE ${HESAI_SDK_INCLUDE_DIRS})
+      target_link_libraries(test_ros1_source_driver ${HESAI_SDK_LINK_LIBS} ${ROS_LIBS}
+        ${catkin_LIBRARIES})
+      add_dependencies(test_ros1_source_driver
+        ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+    endif()
   endif()
 endif($ENV{ROS_VERSION} MATCHES "1")
 

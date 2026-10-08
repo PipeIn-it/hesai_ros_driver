@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- The ROS1 driver's own call sites of the 9B accounting (review of 9B, finding 6): InitImpl,
+       SendPointCloud, SendPacketLoss and PublishDiagnostics, with a live-lidar source that
+       points at nothing (127.0.0.1, a closed PTC port, a free UDP port). One process per case:
+       the SDK's Logger singleton is stopped by each Lidar's destructor and its Stop() cannot run
+       twice, so a second SDK object in one process aborts at its teardown. -->
+  <test test-name="hesai_source_driver_ros1_without_loss_tool" pkg="hesai_ros_driver"
+        type="test_ros1_source_driver" time-limit="120"
+        args="--gtest_filter=SourceDriverRos1.WithoutTheLossTool*" />
+  <test test-name="hesai_source_driver_ros1_with_loss_tool" pkg="hesai_ros_driver"
+        type="test_ros1_source_driver" time-limit="120"
+        args="--gtest_filter=SourceDriverRos1.WithTheLossTool*" />
+</launch>

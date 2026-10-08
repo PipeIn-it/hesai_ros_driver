@@ -40,6 +40,8 @@
 
   <!-- Unit tests (test/test_time_sync_policy.cpp) -->
   <test_depend condition="$ROS_VERSION == 1">rosunit</test_depend>
+  <!-- test/source_driver_ros1.test (a master for the driver's advertise and /diagnostics) -->
+  <test_depend condition="$ROS_VERSION == 1">rostest</test_depend>
   <test_depend condition="$ROS_VERSION == 2">ament_cmake_gtest</test_depend>
 
   <member_of_group>rosidl_interface_packages</member_of_group>

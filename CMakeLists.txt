@@ -38,7 +38,9 @@ if (CMAKE_BUILD_TYPE STREQUAL "")
   add_definitions(-O3)
 endif()
 
-if($ENV{ROS_DISTRO} STREQUAL "humble")  # the ros2 humble requires c++17
+# Every ROS2 distro requires c++17 (jazzy's rclcpp headers use std::is_convertible_v),
+# not only humble; ROS1 stays on c++14.
+if($ENV{ROS_VERSION} MATCHES "2")
 add_definitions(-std=c++17)
 else()
 add_definitions(-std=c++14)
@@ -126,7 +128,7 @@ if($ENV{ROS_VERSION} MATCHES "2")
 
     add_definitions(-DROS2_FOUND)
     include_directories(${rclcpp_INCLUDE_DIRS})
-    set(CMAKE_CXX_STANDARD 14)
+    set(CMAKE_CXX_STANDARD 17)
 
     find_package(ament_cmake REQUIRED)
     find_package(sensor_msgs REQUIRED)

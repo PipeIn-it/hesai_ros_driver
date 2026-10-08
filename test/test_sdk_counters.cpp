@@ -28,3 +28,16 @@ TEST(SdkCounters, Udp6_1ParserStartsWithZeroedLossCounters) {
   parser->~Parser();
   std::free(memory);
 }
+
+// H2 (9B.3): a packet sequence number that goes back (the lidar restarted, a packet came late)
+// must not count about four billion lost packets: the unsigned difference underflowed. Only the
+// real hole (53 after 51) counts.
+TEST(SdkLossArithmetic, BackwardsSequenceDoesNotUnderflow) {
+  hesai::lidar::HsLidarXTV1Tail tail{};
+  uint32_t start = 0, last = 0, loss = 0, start_time = 0, total_loss = 0, total_start = 0;
+  for (uint32_t seq : {100u, 101u, 102u, 50u, 51u, 53u}) {
+    tail.m_u32SeqNum = seq;
+    tail.CalPktLoss(start, last, loss, start_time, total_loss, total_start);
+  }
+  EXPECT_EQ(total_loss, 1u);
+}

@@ -30,6 +30,8 @@ class FrameAccounting {
   void OnPublished(int /*frame_index*/) { published_.fetch_add(1, std::memory_order_relaxed); }
   uint64_t published() const { return published_.load(std::memory_order_relaxed); }
   uint64_t skipped() const { return skipped_.load(std::memory_order_relaxed); }
+  /// The SDK's packet totals, as its loss callback reports them. Not kept yet.
+  void OnPacketTotals(uint32_t /*total*/, uint32_t /*lost*/) {}
 
  private:
   std::atomic<uint64_t> published_{0};

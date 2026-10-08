@@ -308,6 +308,23 @@ if($ENV{ROS_VERSION} MATCHES "1")
   install(FILES nodelet_plugins.xml
     DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
   )
+
+  # The driver's own tests (9B), here where the SDK targets and include lists exist.
+  if(CATKIN_ENABLE_TESTING)
+    catkin_add_gtest(test_driver_accounting test/test_driver_accounting.cpp)
+    target_include_directories(test_driver_accounting PRIVATE ${HESAI_SDK_INCLUDE_DIRS})
+    target_link_libraries(test_driver_accounting gtest_main)
+    catkin_add_gtest(test_config_defaults test/test_config_defaults.cpp)
+    target_include_directories(test_config_defaults PRIVATE ${HESAI_SDK_INCLUDE_DIRS})
+    target_link_libraries(test_config_defaults ${HESAI_SDK_LINK_LIBS} ${ROS_LIBS}
+      ${catkin_LIBRARIES} gtest_main)
+    catkin_add_gtest(test_ros1_pointcloud_layout test/test_ros1_pointcloud_layout.cpp)
+    target_include_directories(test_ros1_pointcloud_layout PRIVATE ${HESAI_SDK_INCLUDE_DIRS})
+    target_link_libraries(test_ros1_pointcloud_layout ${HESAI_SDK_LINK_LIBS} ${ROS_LIBS}
+      ${catkin_LIBRARIES} gtest_main)
+    add_dependencies(test_ros1_pointcloud_layout
+      ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+  endif()
 endif($ENV{ROS_VERSION} MATCHES "1")
 
 
@@ -369,6 +386,20 @@ if($ENV{ROS_VERSION} MATCHES "2")
     ament_add_gtest(test_xt_block_timing test/test_xt_block_timing.cpp)
     target_include_directories(test_xt_block_timing PRIVATE ${HESAI_XT_TEST_INCLUDES})
     target_link_libraries(test_xt_block_timing platutils_lib)
+    # 9B: the driver's own tests (uncompiled on the ROS1 station; checked on Jazzy).
+    ament_add_gtest(test_driver_accounting test/test_driver_accounting.cpp)
+    target_include_directories(test_driver_accounting PRIVATE ${HESAI_SDK_INCLUDE_DIRS})
+    ament_add_gtest(test_config_defaults test/test_config_defaults.cpp)
+    target_include_directories(test_config_defaults PRIVATE ${HESAI_SDK_INCLUDE_DIRS})
+    target_link_libraries(test_config_defaults ${HESAI_SDK_LINK_LIBS})
+    foreach(_ros2_test test_ros2_stamp test_ros2_pointcloud_layout)
+      ament_add_gtest(${_ros2_test} test/${_ros2_test}.cpp)
+      target_include_directories(${_ros2_test} PRIVATE ${HESAI_SDK_INCLUDE_DIRS})
+      target_link_libraries(${_ros2_test} ${HESAI_SDK_LINK_LIBS})
+      ament_target_dependencies(${_ros2_test} rclcpp sensor_msgs std_msgs diagnostic_msgs
+        builtin_interfaces)
+      rosidl_target_interfaces(${_ros2_test} ${PROJECT_NAME} "rosidl_typesupport_cpp")
+    endforeach()
   endif()
 
   ament_package()

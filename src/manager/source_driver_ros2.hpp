@@ -53,6 +53,7 @@
 #include <thread>
 #include <boost/thread.hpp>
 #include "source_drive_common.hpp"
+#include "driver_accounting.hpp"
 
 class SourceDriver
 {
@@ -138,6 +139,8 @@ protected:
   std::condition_variable status_cv_;
   bool status_running_{false};
   bool composed_{false};  // true when running inside a component container
+  // The frames published, and the ones the SDK skipped (9B).
+  hesai_ros_driver::FrameAccounting frame_accounting_;
 };
 
 inline builtin_interfaces::msg::Time ToRos2Stamp(double seconds)
@@ -187,7 +190,9 @@ inline void SourceDriver::InitImpl(const YAML::Node& config, DriverParam& driver
   }
 
 
-  if (driver_param.input_param.ros_send_packet_loss_topic != NULL_TOPIC) {
+  if (hesai_ros_driver::LossTopicPolicy::ShouldAdvertise(
+          driver_param.decoder_param.enable_packet_loss_tool,
+          driver_param.input_param.ros_send_packet_loss_topic)) {
     loss_pub_ = node_ptr_->create_publisher<hesai_ros_driver::msg::LossPacket>(driver_param.input_param.ros_send_packet_loss_topic, 10);
   }
 
@@ -234,7 +239,9 @@ inline void SourceDriver::InitImpl(const YAML::Node& config, DriverParam& driver
   if(driver_param.input_param.send_packet_ros && driver_param.input_param.source_type != DATA_FROM_ROS_PACKET){
     driver_ptr_->RegRecvCallback(std::bind(&SourceDriver::SendPacket, this, std::placeholders::_1, std::placeholders::_2)) ;
   }
-  if (driver_param.input_param.ros_send_packet_loss_topic != NULL_TOPIC) {
+  if (hesai_ros_driver::LossTopicPolicy::ShouldAdvertise(
+          driver_param.decoder_param.enable_packet_loss_tool,
+          driver_param.input_param.ros_send_packet_loss_topic)) {
   driver_ptr_->RegRecvCallback(std::bind(&SourceDriver::SendPacketLoss, this, std::placeholders::_1, std::placeholders::_2));
 }
   if (driver_param.input_param.source_type == DATA_FROM_LIDAR) {
@@ -350,6 +357,11 @@ inline void SourceDriver::PublishDiagnostics()
   add("mode_transitions", std::to_string(s.transitions));
   add("implausible_frames", std::to_string(s.implausible_frames));
   add("non_monotonic_stamps", std::to_string(s.non_monotonic));
+  {
+    std::vector<std::pair<std::string, std::string>> frames;
+    hesai_ros_driver::AppendFrameAccounting(frame_accounting_, &frames);
+    for (const auto& kv : frames) add(kv.first, kv.second);
+  }
 
   diagnostic_msgs::msg::DiagnosticArray array;
   array.header.stamp = node_ptr_->now();
@@ -364,6 +376,7 @@ inline void SourceDriver::SendPacket(const UdpFrame_t& msg, double timestamp)
 
 inline void SourceDriver::SendPointCloud(const LidarDecodedFrame<LidarPointXYZIRT>& msg)
 {
+  frame_accounting_.OnPublished(msg.frame_index);
   // Publish via unique_ptr to enable zero-copy when intra-process comms are active.
   // When not in a composed container, this is equivalent to the const-ref publish path.
   pub_->publish(std::make_unique<sensor_msgs::msg::PointCloud2>(ToRosMsg(msg, frame_id_)));

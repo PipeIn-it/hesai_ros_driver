@@ -182,6 +182,10 @@ inline void SourceDriver::InitImpl(const YAML::Node& config, DriverParam& driver
           driver_param.decoder_param.enable_packet_loss_tool,
           driver_param.input_param.ros_send_packet_loss_topic)) {
     loss_pub_ = nh_->advertise<hesai_ros_driver::LossPacket>(driver_param.input_param.ros_send_packet_loss_topic, 10);
+  } else if (driver_param.input_param.ros_send_packet_loss_topic != NULL_TOPIC) {
+    ROS_WARN("hesai_ros_driver: %s is not advertised: the SDK counts packet loss only with "
+             "enable_packet_loss_tool: true",
+             driver_param.input_param.ros_send_packet_loss_topic.c_str());
   }
 
   if (driver_param.input_param.source_type == DATA_FROM_LIDAR) {
@@ -227,9 +231,9 @@ inline void SourceDriver::InitImpl(const YAML::Node& config, DriverParam& driver
   if(driver_param.input_param.send_packet_ros && driver_param.input_param.source_type != DATA_FROM_ROS_PACKET){
     driver_ptr_->RegRecvCallback(std::bind(&SourceDriver::SendPacket, this, std::placeholders::_1, std::placeholders::_2)) ;
   }
-  if (hesai_ros_driver::LossTopicPolicy::ShouldAdvertise(
-          driver_param.decoder_param.enable_packet_loss_tool,
-          driver_param.input_param.ros_send_packet_loss_topic)) {
+  // With the loss tool on, the SDK reports its packet totals with each published frame: they
+  // feed /diagnostics, and the loss topic when it is advertised (H2).
+  if (driver_param.decoder_param.enable_packet_loss_tool) {
     driver_ptr_->RegRecvCallback(std::bind(&SourceDriver::SendPacketLoss, this, std::placeholders::_1, std::placeholders::_2));
   }
   if (driver_param.input_param.source_type == DATA_FROM_LIDAR) {
@@ -364,7 +368,15 @@ inline void SourceDriver::SendPacket(const UdpFrame_t& msg, double timestamp)
 
 inline void SourceDriver::SendPointCloud(const LidarDecodedFrame<LidarPointXYZIRT>& msg)
 {
-  frame_accounting_.OnPublished(msg.frame_index);
+  const uint64_t skipped = frame_accounting_.OnPublished(msg.frame_index);
+  if (skipped > 0) {
+    ROS_WARN_THROTTLE(10.0,
+                      "hesai_ros_driver: %s: %llu frame(s) skipped before frame %d (at most %d "
+                      "points, or failed to start); %llu since start-up",
+                      frame_id_.c_str(), static_cast<unsigned long long>(skipped), msg.frame_index,
+                      hesai::lidar::kMinPointsOfOneFrame,
+                      static_cast<unsigned long long>(frame_accounting_.skipped()));
+  }
   pub_.publish(ToRosMsg(msg, frame_id_));
 }
 
@@ -375,7 +387,8 @@ inline void SourceDriver::SendCorrection(const u8Array_t& msg)
 
 inline void SourceDriver::SendPacketLoss(const uint32_t& total_packet_count, const uint32_t& total_packet_loss_count)
 {
-  loss_pub_.publish(ToRosMsg(total_packet_count, total_packet_loss_count));
+  frame_accounting_.OnPacketTotals(total_packet_count, total_packet_loss_count);
+  if (loss_pub_) loss_pub_.publish(ToRosMsg(total_packet_count, total_packet_loss_count));
 }
 
 inline void SourceDriver::SendPTP(const uint8_t& ptp_lock_offset, const u8Array_t& ptp_status)
